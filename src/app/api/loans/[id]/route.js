@@ -4,7 +4,7 @@ import { getLoanById, updateLoan, deleteLoan } from '@/lib/services/db-service';
 // GET - Get single loan by ID
 export async function GET(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const loan = await getLoanById(id);
     
     if (!loan) {
@@ -24,7 +24,7 @@ export async function GET(request, { params }) {
 // PUT - Update loan
 export async function PUT(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const loan = await updateLoan(id, body);
     return NextResponse.json({ success: true, loan });
@@ -43,7 +43,7 @@ export async function PUT(request, { params }) {
 // DELETE - Delete loan
 export async function DELETE(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     await deleteLoan(id);
     return NextResponse.json({ success: true, message: 'Loan deleted successfully' });
   } catch (error) {

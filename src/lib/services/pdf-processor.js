@@ -22,13 +22,13 @@ export class PDFProcessor {
   async processWithOCR(filePath) {
     // First try text extraction
     let text = await this.extractText(filePath);
-    
+
     // If text is minimal or empty, use OCR
     if (text.trim().length < 100) {
       // Integrate with LLMWhisper OCR here
       text = await this.runOCR(filePath);
     }
-    
+
     return text;
   }
 
@@ -39,65 +39,46 @@ export class PDFProcessor {
       const fileBuffer = await fs.readFile(filePath);
       const ocrApiUrl = process.env.LLMWHISPER_API_URL || process.env.OCR_API_URL;
       const ocrApiKey = process.env.LLMWHISPER_API_KEY || process.env.OCR_API_KEY;
-      
+
       if (!ocrApiUrl) {
         console.warn('OCR API URL not configured, skipping OCR');
         return '';
       }
 
-      // For Node.js, you may need to use form-data package
-      // Install: npm install form-data
-      // Example implementation:
-      let FormData;
-      try {
-        FormData = (await import('form-data')).default;
-      } catch {
-        // If form-data is not available, use base64 encoding
-        const base64 = fileBuffer.toString('base64');
-        const response = await fetch(ocrApiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(ocrApiKey && { 'Authorization': `Bearer ${ocrApiKey}` }),
-          },
-          body: JSON.stringify({
-            file: base64,
-            filename: path.basename(filePath),
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`OCR API error: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        return result.text || result.content || result.data?.text || '';
+      // Validate URL is not pointing to localhost:3000 (Next.js server)
+      if (ocrApiUrl.includes('localhost:3000') || ocrApiUrl.includes('127.0.0.1:3000')) {
+        console.warn('OCR API URL appears to be pointing to Next.js server. Please configure your LLMWhisper service URL.');
+        return '';
       }
 
-      // If form-data is available, use it
-      const formData = new FormData();
-      formData.append('file', fileBuffer, path.basename(filePath));
-      
-      const headers = {
-        ...(ocrApiKey && { 'Authorization': `Bearer ${ocrApiKey}` }),
-        ...formData.getHeaders(),
-      };
-
+      // Use base64 encoding for file upload
+      const base64 = fileBuffer.toString('base64');
       const response = await fetch(ocrApiUrl, {
         method: 'POST',
-        headers: headers,
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(ocrApiKey && { 'Authorization': `Bearer ${ocrApiKey}` }),
+        },
+        body: JSON.stringify({
+          file: base64,
+          filename: path.basename(filePath),
+        }),
       });
 
       if (!response.ok) {
-        throw new Error(`OCR API error: ${response.statusText}`);
+        throw new Error(`OCR API error: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json();
       return result.text || result.content || result.data?.text || '';
     } catch (error) {
-      console.error('OCR processing failed:', error);
-      // If OCR fails, return empty string to continue with basic extraction
+      // Log error but don't throw - allow fallback to basic extraction
+      if (error.code === 'EACCES' || error.code === 'ECONNREFUSED') {
+        console.warn(`OCR service unavailable at ${process.env.LLMWHISPER_API_URL || process.env.OCR_API_URL}. Using basic PDF extraction.`);
+      } else {
+        console.warn('OCR processing failed:', error.message || error);
+      }
+      // Return empty string to continue with basic extraction
       return '';
     }
   }

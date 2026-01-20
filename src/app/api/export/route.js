@@ -16,13 +16,12 @@ export async function GET(request) {
     }
 
     const excelService = new ExcelService();
+    
+    // Generate/update the Excel file with all loans
     const filePath = await excelService.generateExcel(loans);
 
     const fileBuffer = await fs.readFile(filePath);
-    const fileName = path.basename(filePath);
-
-    // Clean up the file after reading (optional, or keep for later)
-    // await fs.unlink(filePath);
+    const fileName = 'loan_export.xlsx';
 
     return new NextResponse(fileBuffer, {
       headers: {

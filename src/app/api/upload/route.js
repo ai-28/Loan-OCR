@@ -29,14 +29,14 @@ export async function POST(request) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const uploadDir = path.join(process.cwd(), 'uploads');
-    
+
     // Ensure upload directory exists
     try {
       await writeFile(path.join(uploadDir, '.gitkeep'), '');
     } catch {
       // Directory might already exist
     }
-    
+
     const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const filePath = path.join(uploadDir, fileName);
 
@@ -46,11 +46,22 @@ export async function POST(request) {
     const pdfProcessor = new PDFProcessor();
     let pdfText;
     try {
+      // Try OCR first, falls back to basic extraction automatically
       pdfText = await pdfProcessor.processWithOCR(filePath);
+
+      // If OCR returned empty and we have minimal text, try basic extraction
+      if (!pdfText || pdfText.trim().length < 10) {
+        console.log('OCR returned minimal text, trying basic PDF extraction...');
+        pdfText = await pdfProcessor.extractText(filePath);
+      }
     } catch (error) {
-      console.error('PDF processing error:', error);
-      // Try basic extraction if OCR fails
-      pdfText = await pdfProcessor.extractText(filePath);
+      console.error('PDF processing error:', error.message);
+      // Fallback to basic extraction
+      try {
+        pdfText = await pdfProcessor.extractText(filePath);
+      } catch (extractError) {
+        throw new Error(`Failed to extract text from PDF: ${extractError.message}`);
+      }
     }
 
     // Extract data using LLM
@@ -64,17 +75,17 @@ export async function POST(request) {
       pdfFilePath: filePath,
     });
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       loan,
-      message: 'PDF processed and data extracted successfully' 
+      message: 'PDF processed and data extracted successfully'
     });
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to process PDF', 
-        details: error.message 
+      {
+        error: 'Failed to process PDF',
+        details: error.message
       },
       { status: 500 }
     );
