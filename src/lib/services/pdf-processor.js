@@ -1,15 +1,12 @@
 import pdf from 'pdf-parse';
-import fs from 'fs/promises';
-import path from 'path';
 
 export class PDFProcessor {
   /**
-   * Extract text from PDF file
+   * Extract text from PDF buffer
    */
-  async extractText(filePath) {
+  async extractTextFromBuffer(buffer) {
     try {
-      const dataBuffer = await fs.readFile(filePath);
-      const data = await pdf(dataBuffer);
+      const data = await pdf(buffer);
       return data.text;
     } catch (error) {
       throw new Error(`Failed to extract text from PDF: ${error.message}`);
@@ -18,25 +15,25 @@ export class PDFProcessor {
 
   /**
    * Process PDF with OCR if needed (using LLMWhisper)
+   * Works directly with buffer - no file system needed
    */
-  async processWithOCR(filePath) {
-    // First try text extraction
-    let text = await this.extractText(filePath);
+  async processWithOCR(buffer, filename) {
+    // First try text extraction from buffer
+    let text = await this.extractTextFromBuffer(buffer);
 
     // If text is minimal or empty, use OCR
     if (text.trim().length < 100) {
       // Integrate with LLMWhisper OCR here
-      text = await this.runOCR(filePath);
+      text = await this.runOCRFromBuffer(buffer, filename);
     }
 
     return text;
   }
 
-  async runOCR(filePath) {
+  async runOCRFromBuffer(buffer, filename) {
     // Integrate with LLMWhisper OCR API
-    // Customize this method based on your OCR API requirements
+    // Works directly with buffer - no file system needed
     try {
-      const fileBuffer = await fs.readFile(filePath);
       const ocrApiUrl = process.env.LLMWHISPER_API_URL || process.env.OCR_API_URL;
       const ocrApiKey = process.env.LLMWHISPER_API_KEY || process.env.OCR_API_KEY;
 
@@ -51,8 +48,8 @@ export class PDFProcessor {
         return '';
       }
 
-      // Use base64 encoding for file upload
-      const base64 = fileBuffer.toString('base64');
+      // Use base64 encoding for file upload directly from buffer
+      const base64 = buffer.toString('base64');
       const response = await fetch(ocrApiUrl, {
         method: 'POST',
         headers: {
@@ -61,7 +58,7 @@ export class PDFProcessor {
         },
         body: JSON.stringify({
           file: base64,
-          filename: path.basename(filePath),
+          filename: filename,
         }),
       });
 

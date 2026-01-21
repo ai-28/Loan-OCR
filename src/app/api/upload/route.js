@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
-import path from 'path';
 import { PDFProcessor } from '@/lib/services/pdf-processor';
 import { LLMService } from '@/lib/services/llm-service';
 import { addLoan } from '@/lib/services/db-service';
@@ -25,40 +23,27 @@ export async function POST(request) {
       return NextResponse.json({ error: 'File size exceeds 10MB limit' }, { status: 400 });
     }
 
-    // Save file
+    // Get buffer directly - no need to save to disk
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const uploadDir = path.join(process.cwd(), 'uploads');
 
-    // Ensure upload directory exists
-    try {
-      await writeFile(path.join(uploadDir, '.gitkeep'), '');
-    } catch {
-      // Directory might already exist
-    }
-
-    const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-    const filePath = path.join(uploadDir, fileName);
-
-    await writeFile(filePath, buffer);
-
-    // Process PDF
+    // Process PDF directly from buffer
     const pdfProcessor = new PDFProcessor();
     let pdfText;
     try {
       // Try OCR first, falls back to basic extraction automatically
-      pdfText = await pdfProcessor.processWithOCR(filePath);
+      pdfText = await pdfProcessor.processWithOCR(buffer, file.name);
 
       // If OCR returned empty and we have minimal text, try basic extraction
       if (!pdfText || pdfText.trim().length < 10) {
         console.log('OCR returned minimal text, trying basic PDF extraction...');
-        pdfText = await pdfProcessor.extractText(filePath);
+        pdfText = await pdfProcessor.extractTextFromBuffer(buffer);
       }
     } catch (error) {
       console.error('PDF processing error:', error.message);
       // Fallback to basic extraction
       try {
-        pdfText = await pdfProcessor.extractText(filePath);
+        pdfText = await pdfProcessor.extractTextFromBuffer(buffer);
       } catch (extractError) {
         throw new Error(`Failed to extract text from PDF: ${extractError.message}`);
       }
@@ -68,11 +53,10 @@ export async function POST(request) {
     const llmService = new LLMService();
     const loanData = await llmService.extractLoanData(pdfText);
 
-    // Save to database
+    // Save to database (without file path since we don't save files)
     const loan = await addLoan({
       ...loanData,
       pdfFileName: file.name,
-      pdfFilePath: filePath,
     });
 
     return NextResponse.json({

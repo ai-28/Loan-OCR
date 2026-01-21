@@ -8,9 +8,20 @@ export class LLMService {
    * Extract loan data from PDF text using LLM
    */
   async extractLoanData(pdfText) {
+    // Validate configuration
+    if (!this.apiKey) {
+      throw new Error('LLM_API_KEY is not configured. Please set LLM_API_KEY in your environment variables.');
+    }
+
+    if (!this.apiUrl) {
+      throw new Error('LLM_API_URL is not configured. Please set LLM_API_URL in your environment variables.');
+    }
+
     const prompt = this.buildExtractionPrompt(pdfText);
-    
+
     try {
+      console.log(`Calling LLM API at: ${this.apiUrl}`);
+
       const response = await fetch(this.apiUrl, {
         method: 'POST',
         headers: {
@@ -35,15 +46,30 @@ export class LLMService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`LLM API error: ${response.statusText} - ${JSON.stringify(errorData)}`);
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        throw new Error(`LLM API error (${response.status} ${response.statusText}): ${JSON.stringify(errorData)}`);
       }
 
       const data = await response.json();
+
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error('Invalid response format from LLM API');
+      }
+
       const extracted = JSON.parse(data.choices[0].message.content);
-      
+
       return this.validateAndFormat(extracted);
     } catch (error) {
+      // Provide more detailed error information
+      if (error.message.includes('fetch failed')) {
+        throw new Error(`LLM API connection failed. Please check: 1) Your internet connection, 2) LLM_API_URL is correct (${this.apiUrl}), 3) The API endpoint is accessible. Original error: ${error.message}`);
+      }
       throw new Error(`LLM extraction failed: ${error.message}`);
     }
   }
